@@ -1,7 +1,8 @@
+use std::fmt::{Debug, Display, Formatter};
 use error_mapper::{create_new_error, TheError, TheResult};
 
 type RegisterFileAddrType = u8;
-type DestinationType = u8;
+type DestinationType = char;
 type BitLocationType = u8;
 type LiteralType = u16;
 type OpcodeType = u16;
@@ -88,88 +89,102 @@ pub enum Instructions {
 
 impl Instructions {
     pub fn from_opcode(opcode: OpcodeType) -> TheResult<Self> {
-        
+
         //  Check the first 4 bits to separate by categories
         match opcode >> 12 {
-            0b0011 => {  Self::parse_literal_ops(opcode) },
-            0b0010 => {  Self::parse_jump_ops(opcode) },
-            0b0001 => {  Self::parse_single_bit_ops(opcode) },
+            0b0011 => { Self::parse_literal_ops(opcode) },
+            0b0010 => { Self::parse_jump_ops(opcode) },
+            0b0001 => { Self::parse_single_bit_ops(opcode) },
             0b0000 => {
                 if (opcode >> 9) & 0b111 != 0b000 {
-                     return Self::parse_logic_ops(opcode)
+                    return Self::parse_logic_ops(opcode)
                 }
-                
+
                 if (opcode >> 7) & 0b11 != 0b00 {
-                     return Self::parse_simple_ops(opcode)
+                    return Self::parse_simple_ops(opcode)
                 }
-                
-                 Self::parse_system_ops(opcode)
+
+                Self::parse_system_ops(opcode)
             },
             _ => { Err(Self::error_from_opcode(opcode)) }
         }
     }
 
     fn parse_literal_ops(opcode: OpcodeType) -> TheResult<Self> {
+        
+        let literal = opcode & 0b11111111;
+        
         match (opcode >> 10) & 0b11 {
             0b11 => {
                 match (opcode >> 9) & 0b11 {
-                    0b10 => { Ok(Self::SUBLW(0)) },
-                    0b11 => { Ok(Self::ADDLW(0)) },
+                    0b10 => { Ok(Self::SUBLW(literal)) },
+                    0b11 => { Ok(Self::ADDLW(literal)) },
                     _ => { Err(Self::error_from_opcode(opcode)) }
                 }
             },
             0b10 => {
                 match (opcode >> 8) & 0b11 {
-                    0b00 => { Ok(Self::IORLW(0)) },
-                    0b01 => { Ok(Self::ANDLW(0)) },
-                    0b10 => { Ok(Self::XORLW(0)) },
+                    0b00 => { Ok(Self::IORLW(literal)) },
+                    0b01 => { Ok(Self::ANDLW(literal)) },
+                    0b10 => { Ok(Self::XORLW(literal)) },
                     _ => { Err(Self::error_from_opcode(opcode)) }
                 }
             },
-            0b01 => { Ok(Self::RETLW(0)) },
-            0b00 => { Ok(Self::MOVLW(0)) },
+            0b01 => { Ok(Self::RETLW(literal)) },
+            0b00 => { Ok(Self::MOVLW(literal)) },
             _ => { Err(Self::error_from_opcode(opcode)) }
         }
     }
     fn parse_jump_ops(opcode: OpcodeType) -> TheResult<Self> {
+        
+        let address = opcode & 0b11111111111;
+        
         match (opcode >> 11) & 0b11 {
-            0b00 => { Ok(Self::CALL(0)) },
-            0b01 => { Ok(Self::GOTO(0)) },
+            0b00 => { Ok(Self::CALL(address)) },
+            0b01 => { Ok(Self::GOTO(address)) },
             _ => { Err(Self::error_from_opcode(opcode)) }
         }
     }
     fn parse_single_bit_ops(opcode: OpcodeType) -> TheResult<Self> {
+        
+        let (register_file, bit) = (opcode as u8 & 0b1111111, (opcode as u8 >> 7) & 0b111);
+
         match (opcode >> 10) & 0b11 {
-            0b00 => { Ok(Self::BCF(0, 0)) },
-            0b01 => { Ok(Self::BSF(0, 0)) },
-            0b10 => { Ok(Self::BTFSC(0, 0)) },
-            0b11 => { Ok(Self::BTFSS(0, 0)) },
+            0b00 => { Ok(Self::BCF(register_file, bit)) },
+            0b01 => { Ok(Self::BSF(register_file, bit)) },
+            0b10 => { Ok(Self::BTFSC(register_file, bit)) },
+            0b11 => { Ok(Self::BTFSS(register_file, bit)) },
             _ => Err(Self::error_from_opcode(opcode))
         }
     }
     fn parse_logic_ops(opcode: OpcodeType) -> TheResult<Self> {
+        let (register_file, destination) = (opcode as u8 & 0b1111111, if (opcode as u8 >> 7) & 0b1 == 0 { 'w' } else { 'f' } );
+
         match (opcode >> 8) & 0b1111 {
-            0b0010 => { Ok(Self::SUBWF(0, 0)) },
-            0b0011 => { Ok(Self::DECF(0, 0)) },
-            0b0100 => { Ok(Self::IORWF(0, 0)) },
-            0b0101 => { Ok(Self::ANDWF(0, 0)) },
-            0b0110 => { Ok(Self::XORWF(0, 0)) },
-            0b0111 => { Ok(Self::ADDWF(0, 0)) },
-            0b1000 => { Ok(Self::MOVF(0, 0)) },
-            0b1001 => { Ok(Self::COMF(0, 0)) },
-            0b1010 => { Ok(Self::INCF(0, 0)) },
-            0b1011 => { Ok(Self::DECFSZ(0, 0)) },
-            0b1100 => { Ok(Self::RRF(0, 0)) },
-            0b1101 => { Ok(Self::RLF(0, 0)) },
-            0b1110 => { Ok(Self::SWAPF(0, 0)) },
-            0b1111 => { Ok(Self::INCFSZ(0, 0)) },
+            0b0010 => { Ok(Self::SUBWF(register_file, destination)) },
+            0b0011 => { Ok(Self::DECF(register_file, destination)) },
+            0b0100 => { Ok(Self::IORWF(register_file, destination)) },
+            0b0101 => { Ok(Self::ANDWF(register_file, destination)) },
+            0b0110 => { Ok(Self::XORWF(register_file, destination)) },
+            0b0111 => { Ok(Self::ADDWF(register_file, destination)) },
+            0b1000 => { Ok(Self::MOVF(register_file, destination)) },
+            0b1001 => { Ok(Self::COMF(register_file, destination)) },
+            0b1010 => { Ok(Self::INCF(register_file, destination)) },
+            0b1011 => { Ok(Self::DECFSZ(register_file, destination)) },
+            0b1100 => { Ok(Self::RRF(register_file, destination)) },
+            0b1101 => { Ok(Self::RLF(register_file, destination)) },
+            0b1110 => { Ok(Self::SWAPF(register_file, destination)) },
+            0b1111 => { Ok(Self::INCFSZ(register_file, destination)) },
             _ => { Err(Self::error_from_opcode(opcode)) }
         }
     }
     fn parse_simple_ops(opcode: OpcodeType) -> TheResult<Self> {
+        
+        let register_file = opcode as u8 & 0b1111111;
+        
         match (opcode >> 7) & 0b11 {
-            0b01 => { Ok(Self::MOVWF(0)) }
-            0b11 => { Ok(Self::CLRF(0)) }
+            0b01 => { Ok(Self::MOVWF(register_file)) }
+            0b11 => { Ok(Self::CLRF(register_file)) }
             0b10 => { Ok(Self::CLRW) }
             _ => { Err(Self::error_from_opcode(opcode)) }
         }
@@ -180,7 +195,7 @@ impl Instructions {
             0b0001001 => { Ok(Self::RETFIE) }
             0b1100011 => { Ok(Self::SLEEP) }
             0b1100100 => { Ok(Self::CLRWDT) }
-            _ => { 
+            _ => {
                 if opcode & 0b11111 == 0b00000 && (opcode >> 7) & 0b111111111 == 0b000000000 {
                     Ok(Self::NOP)
                 } else {
@@ -188,11 +203,56 @@ impl Instructions {
                 }
             }
         }
-    }    
+    }
     fn error_from_opcode(opcode: OpcodeType) -> TheError {
         create_new_error!(format!("Invalid operation code: {}", opcode))
     }
 }
+
+impl Display for Instructions {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Instructions::ADDWF(file, destination) => { write!(f, "ADDWF 0x{:x} {}", file, destination) },
+            Instructions::ANDWF(file, destination) => { write!(f, "ANDWF 0x{:x} {}", file, destination) },
+            Instructions::CLRF(file) => { write!(f, "CLRF 0x{:x}", file) },
+            Instructions::CLRW => { write!(f, "CLRW") },
+            Instructions::COMF(file, destination) => { write!(f, "COMF 0x{:x} {}", file, destination) },
+            Instructions::DECF(file, destination) => { write!(f, "DECF 0x{:x} {}", file, destination) },
+            Instructions::DECFSZ(file, destination) => { write!(f, "DECFSZ 0x{:x} {}", file, destination) },
+            Instructions::INCF(file, destination) => { write!(f, "INCF 0x{:x} {}", file, destination) },
+            Instructions::INCFSZ(file, destination) => { write!(f, "INCFSZ 0x{:x} {}", file, destination) },
+            Instructions::IORWF(file, destination) => { write!(f, "IORWF 0x{:x} {}", file, destination) },
+            Instructions::MOVF(file, destination) => { write!(f, "MOVF 0x{:x} {}", file, destination) },
+            Instructions::MOVWF(file) => { write!(f, "MOVWF 0x{:x}", file) },
+            Instructions::NOP => { write!(f, "NOP") },
+            Instructions::RLF(file, destination) => { write!(f, "RLF 0x{:x} {}", file, destination) },
+            Instructions::RRF(file, destination) => { write!(f, "RRF 0x{:x} {}", file, destination) },
+            Instructions::SUBWF(file, destination) => { write!(f, "SUBWF 0x{:x} {}", file, destination) },
+            Instructions::SWAPF(file, destination) => { write!(f, "SWAPF 0x{:x} {}", file, destination) },
+            Instructions::XORWF(file, destination) => { write!(f, "XORWF 0x{:x} {}", file, destination) },
+            Instructions::BCF(file, bit) => { write!(f, "BCF 0x{:x} {}", file, bit) },
+            Instructions::BSF(file, bit) => { write!(f, "BSF 0x{:x} {}", file, bit) },
+            Instructions::BTFSC(file, bit) => { write!(f, "BTFSC 0x{:x} {}", file, bit) },
+            Instructions::BTFSS(file, bit) => { write!(f, "BTFSS 0x{:x} {}", file, bit) },
+            Instructions::ADDLW(literal) => { write!(f, "ADDLW 0x{:x}", literal) },
+            Instructions::ANDLW(literal) => { write!(f, "ANDLW 0x{:x}", literal) },
+            Instructions::CALL(literal) => { write!(f, "CALL 0x{:x}", literal) },
+            Instructions::CLRWDT => { write!(f, "CLRWDT") },
+            Instructions::GOTO(literal) => { write!(f, "GOTO 0x{:x}", literal) },
+            Instructions::IORLW(literal) => { write!(f, "IORLW 0x{:x}", literal) },
+            Instructions::MOVLW(file) => { write!(f, "MOVLW 0x{:x}", file) },
+            Instructions::RETFIE => { write!(f, "RETFIE") },
+            Instructions::RETLW(file) => { write!(f, "RETLW 0x{:x}", file) },
+            Instructions::RETURN => { write!(f, "RETURN") },
+            Instructions::SLEEP => { write!(f, "SLEEP") },
+            Instructions::SUBLW(file) => { write!(f, "SUBLW 0x{:x}", file) },
+            Instructions::XORLW(file) => { write!(f, "XORLW 0x{:x}", file) },
+        }
+    }
+}
+
+
+
 
 #[cfg(test)]
 mod instructions_tests {
@@ -202,14 +262,14 @@ mod instructions_tests {
     fn inst_addwf() {
         let result = Instructions::from_opcode(0b0000011100000000).unwrap();
         
-        assert_eq!(result, Instructions::ADDWF(0, 0))
+        assert_eq!(result, Instructions::ADDWF(0, 'w'))
     }
 
     #[test]
     fn inst_andwf() {
         let result = Instructions::from_opcode(0b0000010100000000).unwrap();
 
-        assert_eq!(result, Instructions::ANDWF(0, 0))
+        assert_eq!(result, Instructions::ANDWF(0, 'w'))
     }
 
     #[test]
@@ -230,49 +290,49 @@ mod instructions_tests {
     fn inst_comf() {
         let result = Instructions::from_opcode(0b0000100100000000).unwrap();
 
-        assert_eq!(result, Instructions::COMF(0, 0))
+        assert_eq!(result, Instructions::COMF(0, 'w'))
     }
 
     #[test]
     fn inst_decf() {
         let result = Instructions::from_opcode(0b0000001100000000).unwrap();
 
-        assert_eq!(result, Instructions::DECF(0, 0))
+        assert_eq!(result, Instructions::DECF(0, 'w'))
     }
 
     #[test]
     fn inst_defsz() {
         let result = Instructions::from_opcode(0b0000101100000000).unwrap();
 
-        assert_eq!(result, Instructions::DECFSZ(0, 0))
+        assert_eq!(result, Instructions::DECFSZ(0, 'w'))
     }
 
     #[test]
     fn inst_incf() {
         let result = Instructions::from_opcode(0b0000101000000000).unwrap();
 
-        assert_eq!(result, Instructions::INCF(0, 0))
+        assert_eq!(result, Instructions::INCF(0, 'w'))
     }
 
     #[test]
     fn inst_infsz() {
         let result = Instructions::from_opcode(0b0000111100000000).unwrap();
 
-        assert_eq!(result, Instructions::INCFSZ(0, 0))
+        assert_eq!(result, Instructions::INCFSZ(0, 'w'))
     }
 
     #[test]
     fn inst_iorwf() {
         let result = Instructions::from_opcode(0b0000010000000000).unwrap();
 
-        assert_eq!(result, Instructions::IORWF(0, 0))
+        assert_eq!(result, Instructions::IORWF(0, 'w'))
     }
 
     #[test]
     fn inst_movf() {
         let result = Instructions::from_opcode(0b0000100000000000).unwrap();
 
-        assert_eq!(result, Instructions::MOVF(0, 0))
+        assert_eq!(result, Instructions::MOVF(0, 'w'))
     }
 
     #[test]
@@ -293,35 +353,35 @@ mod instructions_tests {
     fn inst_rlf() {
         let result = Instructions::from_opcode(0b0000110100000000).unwrap();
 
-        assert_eq!(result, Instructions::RLF(0, 0))
+        assert_eq!(result, Instructions::RLF(0, 'w'))
     }
 
     #[test]
     fn inst_rrf() {
         let result = Instructions::from_opcode(0b0000110000000000).unwrap();
 
-        assert_eq!(result, Instructions::RRF(0, 0))
+        assert_eq!(result, Instructions::RRF(0, 'w'))
     }
 
     #[test]
     fn inst_subwf() {
         let result = Instructions::from_opcode(0b0000001000000000).unwrap();
 
-        assert_eq!(result, Instructions::SUBWF(0, 0))
+        assert_eq!(result, Instructions::SUBWF(0, 'w'))
     }
 
     #[test]
     fn inst_swapf() {
         let result = Instructions::from_opcode(0b0000111000000000).unwrap();
 
-        assert_eq!(result, Instructions::SWAPF(0, 0))
+        assert_eq!(result, Instructions::SWAPF(0, 'w'))
     }
 
     #[test]
     fn inst_xorwf() {
         let result = Instructions::from_opcode(0b0000011000000000).unwrap();
 
-        assert_eq!(result, Instructions::XORWF(0, 0))
+        assert_eq!(result, Instructions::XORWF(0, 'w'))
     }
 
     #[test]

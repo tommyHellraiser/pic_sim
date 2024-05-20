@@ -3,5 +3,7 @@ use crate::modules::instructions::Instructions;
 mod modules;
 
 fn main() {
-    let asd = Instructions::from_opcode(0x3FFF);
+    let instruction = Instructions::from_opcode(0x1C03).unwrap();
+    
+    println!("{}", instruction);
 }
