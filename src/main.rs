@@ -1,5 +1,7 @@
+use crate::modules::instructions::Instructions;
+
 mod modules;
 
 fn main() {
-    println!("Hello, world!");
+    let asd = Instructions::from_opcode(0x3FFF);
 }
